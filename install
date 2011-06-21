@@ -1,0 +1,281 @@
+#!/bin/bash
+
+PROG_NAME=SoftSWITCH
+DIR_NAME=fs106
+DIR_PATH=/home/pub/release
+PROG_DIR=$DIR_PATH/$DIR_NAME
+PID_FILE=$PROG_DIR/run/freeswitch.pid
+FS_USER=pub
+FS_FILE=$PROG_DIR/bin/freeswitch 
+FS_HOME=$PROG_DIR
+RETVAL=0
+PWDIR=`/bin/pwd`
+
+STR=`/usr/bin/id | /bin/grep root`
+if [ -z "$STR" ]; then
+        echo "Please be root!"
+        exit 1
+fi
+if [ ! -e "/etc/rc.d/init.d/httpd" ]; then
+    echo "Please install appache(httpd) first!"
+    exit 1
+fi
+if [ ! -e "/etc/rc.d/init.d/postgresql" ]; then
+    echo "Please install postgresql datebase server first!"
+    exit 1
+fi
+if [ ! -e "/usr/lib64/libodbcpsql.so" ]; then
+    echo "postgresql database server installation not correct!"
+    exit 1
+fi
+
+
+STR=`/bin/cat /etc/passwd | /bin/grep :/home/pub:`
+if [ -z "$STR" ]; then
+    echo "Please create pub user and set a passwd for pub! The shell command is:"
+    echo "/usr/sbin/useradd pub"
+    echo "/usr/bin/passwd pub"
+    exit 1
+fi
+
+
+if [ ! -d "/home/pub/release/" ]; then
+    /bin/mkdir /home/pub/release
+    /bin/chown pub:pub /home/pub/release    
+fi
+#/bin/chown pub:pub /home/pub/release
+
+echo "prepare intallation..."
+/sbin/service softswitch stop >/dev/null 2>&1
+/sbin/service httpd stop >/dev/null 2>&1
+/sbin/service postgresql start >/dev/null 2>&1
+/sbin/service postgresql stop >/dev/null 2>&1
+
+echo "install softswitch..."
+if [ -d "/home/pub/release/.fs106/" ]; then
+    if [ -d "/home/pub/release/fs106/" ]; then
+	/bin/rm  -rdf /home/pub/release/fs106 2>/dev/null
+#/bin/rm -rf /home/pub/release/.fs106 >/dev/null 2>&1
+    fi
+else
+    if [ -d "/home/pub/release/fs106/" ]; then
+	/bin/mv /home/pub/release/fs106 /home/pub/release/.fs106
+    fi
+fi
+
+/bin/su --command="tar xzpf ./softswitch-1.0.6.2.tar.gz -C /home/pub/release/" pub
+
+echo "install softswitch php..."
+if [ -d "/var/www/html/.switch/" ]; then
+    if [ -d "/var/www/html/switch" ]; then
+	/bin/rm -rdf /var/www/html/switch 2>/dev/null
+    fi
+else
+    if [ -d "/var/www/html/switch" ]; then
+	/bin/mv /var/www/html/switch /var/www/html/.switch
+    fi
+fi
+
+/bin/tar xzpf ./softswitch-php-1.0.6.2.tar.gz -C /var/www/html/
+
+
+echo  "setup postgresql database..."
+
+if [ -e "/var/lib/pgsql/data/.postgresql.conf" ]; then
+    if [ -e "/var/lib/pgsql/data/postgresql.conf" ]; then
+	/bin/rm -f /var/lib/pgsql/data/postgresql.conf
+    fi
+else
+    if [ -e "/var/lib/pgsql/data/postgresql.conf" ]; then
+	/bin/mv /var/lib/pgsql/data/postgresql.conf /var/lib/pgsql/data/.postgresql.conf
+    fi
+fi
+
+#/bin/rm -f /var/lib/pgsql/data/.postgresql.conf >/dev/null 2>&1
+#/bin/mv /var/lib/pgsql/data/postgresql.conf /var/lib/pgsql/data/.postgresql.conf
+/bin/cp ./script/postgresql.conf /var/lib/pgsql/data/
+/bin/chown postgres:postgres /var/lib/pgsql/data/postgresql.conf
+
+
+if [ -e "/var/lib/pgsql/data/.pg_hba.conf" ]; then
+    if [ -e "/var/lib/pgsql/data/pg_hba.conf" ]; then
+	/bin/rm -f /var/lib/pgsql/data/pg_hba.conf
+    fi
+else
+    if [ -e "/var/lib/pgsql/data/pg_hba.conf" ]; then
+	/bin/mv /var/lib/pgsql/data/pg_hba.conf /var/lib/pgsql/data/.pg_hba.conf
+    fi
+fi
+
+/bin/cp ./script/pg_hba.conf /var/lib/pgsql/data/
+/bin/chown postgres:postgres /var/lib/pgsql/data/pg_hba.conf
+
+/sbin/service postgresql start
+
+su --command="/usr/bin/psql -f ./script/psql.sql >/dev/null 2>&1" postgres
+su --command="/usr/bin/dropdb switchdb >/dev/null 2>&1" postgres
+su --command="/usr/bin/createdb switchdb >/dev/null 2>&1" postgres
+
+#/sbin/service postgresql start
+
+echo "setup odbc..."
+if [ -e "/etc/.odbcinst.ini" ]; then
+    if [ -e "/etc/odbcinst.ini" ]; then
+	/bin/rm -f /etc/odbcinst.ini
+    fi
+else
+    if [ -e "/etc/odbcinst.ini" ]; then
+	/bin/mv /etc/odbcinst.ini /etc/.odbcinst.ini
+    fi
+fi
+/bin/cp ./script/odbcinst.ini /etc/
+
+
+if [ -e "/etc/.odbc.ini" ]; then
+    if [ -e "/etc/odbc.ini" ]; then
+	/bin/rm -f /etc/odbc.ini
+    fi
+else
+    if [ -e "/etc/odbc.ini" ]; then
+	/bin/mv /etc/odbc.ini /etc/.odbc.ini	
+    fi
+fi
+/bin/cp ./script/odbc.ini /etc/
+
+
+
+echo "setup httpd..."
+
+if [ -e "/etc/httpd/conf/.httpd.conf" ]; then
+    if [ -e "/etc/httpd/conf/httpd.conf" ]; then
+	/bin/rm -f /etc/httpd/conf/httpd.conf
+    fi
+else
+    if [ -e "/etc/httpd/conf/httpd.conf" ]; then
+	/bin/mv /etc/httpd/conf/httpd.conf /etc/httpd/conf/.httpd.conf
+    fi
+fi
+/bin/cp ./script/httpd.conf /etc/httpd/conf/
+
+/sbin/service httpd start
+
+
+echo "setup softswitch..."
+if [ -e "/etc/rc.d/init.d/.softswitch" ]; then
+    if [ -e "/etc/rc.d/init.d/softswitch" ]; then
+	/bin/rm -f /etc/rc.d/init.d/softswitch
+    fi
+else
+    if [ -e "/etc/rc.d/init.d/softswitch" ]; then
+	/bin/mv /etc/rc.d/init.d/softswitch /etc/rc.d/init.d/.softswitch
+    fi
+fi
+/bin/cp ./script/softswitch /etc/rc.d/init.d/
+/bin/chmod a+x /etc/rc.d/init.d/softswitch
+
+/sbin/service softswitch start
+
+
+#/etc/rc3.d/
+#S15httpd
+ALL_VAR=`/bin/ls /etc/rc.d/rc3.d/K*httpd 2>/dev/null`
+
+for A_VAR in $ALL_VAR
+do
+  /bin/rm -f $A_VAR >/dev/null 2>&1
+done
+
+ALL_VAR=`/bin/ls /etc/rc.d/rc3.d/S*httpd 2>/dev/null`
+RETVAL=$?
+if [ $RETVAL != 0 ]; then
+    /bin/ln -s ../init.d/httpd /etc/rc.d/rc3.d/S15httpd
+fi
+
+#S64postgresql
+ALL_VAR=`/bin/ls /etc/rc.d/rc3.d/K*postgresql 2>/dev/null`
+
+for A_VAR in $ALL_VAR
+do
+  /bin/rm -f $A_VAR >/dev/null 2>&1
+done
+
+ALL_VAR=`/bin/ls /etc/rc.d/rc3.d/S*postgresql 2>/dev/null`
+RETVAL=$?
+if [ $RETVAL != 0 ]; then
+    /bin/ln -s ../init.d/postgresql /etc/rc.d/rc3.d/S64postgresql
+fi
+
+
+#S99softswitch
+ALL_VAR=`/bin/ls /etc/rc.d/rc3.d/K*softswitch 2>/dev/null`
+
+for A_VAR in $ALL_VAR
+do
+  /bin/rm -f $A_VAR >/dev/null 2>&1
+done
+
+ALL_VAR=`/bin/ls /etc/rc.d/rc3.d/S*softswitch 2>/dev/null`
+RETVAL=$?
+if [ $RETVAL != 0 ]; then
+    /bin/ln -s ../init.d/softswitch /etc/rc.d/rc3.d/S99softswitch
+fi
+
+#/etc/rc.d/rc5.d/
+#S15httpd
+ALL_VAR=`/bin/ls /etc/rc.d/rc5.d/K*httpd 2>/dev/null`
+
+for A_VAR in $ALL_VAR
+do
+  /bin/rm -f $A_VAR >/dev/null 2>&1
+done
+
+ALL_VAR=`/bin/ls /etc/rc.d/rc5.d/S*httpd 2>/dev/null`
+RETVAL=$?
+if [ $RETVAL != 0 ]; then
+    /bin/ln -s ../init.d/httpd /etc/rc.d/rc5.d/S15httpd
+fi
+
+#S64postgresql
+ALL_VAR=`/bin/ls /etc/rc.d/rc5.d/K*postgresql 2>/dev/null`
+
+for A_VAR in $ALL_VAR
+do
+  /bin/rm -f $A_VAR >/dev/null 2>&1
+done
+
+ALL_VAR=`/bin/ls /etc/rc.d/rc5.d/S*postgresql 2>/dev/null`
+RETVAL=$?
+if [ $RETVAL != 0 ]; then
+    /bin/ln -s ../init.d/postgresql /etc/rc.d/rc5.d/S64postgresql
+fi
+
+
+#S99softswitch
+ALL_VAR=`/bin/ls /etc/rc.d/rc5.d/K*softswitch 2>/dev/null`
+
+for A_VAR in $ALL_VAR
+do
+  /bin/rm -f $A_VAR >/dev/null 2>&1
+done
+
+ALL_VAR=`/bin/ls /etc/rc.d/rc5.d/S*softswitch 2>/dev/null`
+RETVAL=$?
+if [ $RETVAL != 0 ]; then
+    /bin/ln -s ../init.d/softswitch /etc/rc.d/rc5.d/S99softswitch
+fi
+
+
+echo "setup inittab..."
+if [ -e "/etc/.inittab" ]; then
+    if [ -e "/etc/inittab" ]; then
+	/bin/rm -f /etc/inittab
+    fi
+else
+    if [ -e "/etc/inittab" ]; then
+	/bin/mv /etc/inittab /etc/.inittab
+    fi
+fi
+/bin/cp ./script/inittab /etc/
+
+echo "finished,enjoy it!"
+exit 0

@@ -1,0 +1,13 @@
+# Please read /usr/share/doc/initscripts-*/sysconfig.txt
+# for the documentation of these parameters.
+# GATEWAY=192.168.18.1
+TYPE=Ethernet
+DEVICE=eth0
+#HWADDR=00:24:e8:64:4d:b2
+BOOTPROTO=none
+NETMASK=255.255.255.0
+IPADDR=192.168.18.7
+ONBOOT=yes
+#USERCTL=no
+IPV6INIT=no
+#PEERDNS=yes
